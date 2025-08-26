@@ -91,7 +91,7 @@ def camera_worker():
                     qr_data = json.loads(data)
                     uid = str(qr_data.get("uid","")).strip()
                     amount = int(qr_data.get("amount",0))
-                    if uid and amount >= 10000:
+                    if uid and amount == 5000:
                         with lock:
                             transaction_status.update({"status":"success","uid":uid,"amount":amount})
                         try:
