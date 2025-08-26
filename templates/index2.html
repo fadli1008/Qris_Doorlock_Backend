@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Monitor Pembayaran</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+    body { font-family: 'Inter', sans-serif; background-color: #f9f9f9; margin:0; display:flex; }
+    /* Sidebar */
+    .sidebar { width:220px; background:#2c3e50; color:white; height:100vh; position:fixed; top:0; left:0; display:flex; flex-direction:column; padding-top:20px; }
+    .sidebar h2 { text-align:center; margin-bottom:30px; font-size:20px; }
+    .sidebar a { padding:15px 20px; text-decoration:none; color:white; display:block; transition:background 0.3s; }
+    .sidebar a:hover, .sidebar a.active { background:#34495e; }
+    /* Main content */
+    .main { margin-left:220px; padding:20px; flex-grow:1; }
+    h2,h3 { color:#2c3e50; }
+    .status-box { padding:15px; border-radius:10px; margin-bottom:20px; border:2px solid #bdc3c7; }
+    .status-idle { background-color:#ecf0f1; border-color:#bdc3c7; }
+    .status-success { background-color:#eafaf1; border-color:#27ae60; }
+    .status-failed { background-color:#fdecea; border-color:#e74c3c; }
+    .status-box p { margin:10px 0; font-size:16px; }
+    img { border-radius:8px; max-width:100%; display:block; margin-bottom:20px; }
+    table { width:100%; border-collapse:collapse; margin-top:15px; }
+    th,td { padding:12px 15px; text-align:left; }
+    thead { background-color:#2980b9; color:white; }
+    tbody tr:nth-child(even){background-color:#f4f6f7;}
+    tbody tr:hover {background-color:#eaf2f8;}
+    .highlight { animation: highlightRow 1.5s ease; }
+    @keyframes highlightRow { from { background-color: #ffeaa7; } to { background-color: inherit; } }
+    .download-buttons { margin-bottom:15px; }
+    .download-buttons button { padding:10px 20px; margin-right:10px; border:none; border-radius:6px; cursor:pointer; font-weight:600; }
+    .btn-pdf { background:#e74c3c; color:white; }
+    .btn-excel { background:#27ae60; color:white; }
+    .download-buttons button:hover { opacity:0.85; transform:scale(1.05); transition:0.2s; }
+    .section { display:none; }
+    .section.active { display:block; }
+    .filter-form { margin:15px 0; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .filter-form select, .filter-form input { padding:8px 10px; border:1px solid #bdc3c7; border-radius:6px; }
+    .filter-form button { padding:8px 16px; border:none; border-radius:6px; background:#2980b9; color:white; font-weight:600; cursor:pointer; }
+    .filter-form button:hover { opacity:0.9; }
+</style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>Menu</h2>
+        <a href="#" class="active" onclick="showSection('home', this)">🏠 Home</a>
+        <a href="#" onclick="showSection('log', this)">📜 Log Transaksi</a>
+        <a href="/logout">🚪 Logout</a>
+    </div>
+
+    <div class="main">
+        <!-- Home Section -->
+        <div id="home" class="section active">
+            <h2>Status Pembayaran</h2>
+            <div id="status-box" class="status-box status-idle">
+                <p>Status: <strong id="status-text">Memuat...</strong></p>
+                <p>UID: <span id="uid-text">-</span></p>
+                <p>Amount: Rp<span id="amount-text">-</span></p>
+            </div>
+
+            <h3>Live Kamera</h3>
+            <img src="{{ url_for('video_feed') }}" alt="Live Kamera">
+        </div>
+
+        <!-- Log Section -->
+        <div id="log" class="section">
+            <h2>Log Transaksi</h2>
+            <div class="download-buttons">
+                <a href="/download/pdf" target="_blank"><button class="btn-pdf">Download PDF</button></a>
+                <a href="/download/excel" target="_blank"><button class="btn-excel">Download Excel</button></a>
+            </div>
+
+            <!-- Filter Form -->
+            <div class="filter-form">
+                <select id="filter-uid">
+                    <option value="">Semua UID</option>
+                    {% for log in logs|unique(attribute='uid') %}
+                        <option value="{{ log.uid }}">{{ log.uid }}</option>
+                    {% endfor %}
+                </select>
+
+                <input type="date" id="filter-date">
+                <input type="month" id="filter-month" style="display:none;">
+
+                <select id="filter-mode" onchange="changeFilterMode()">
+                    <option value="day">Harian</option>
+                    <option value="month">Bulanan</option>
+                </select>
+
+                <button onclick="applyFilter()">Filter</button>
+                <button onclick="resetFilter()">Reset</button>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Waktu</th>
+                        <th>UID</th>
+                        <th>Jumlah</th>
+                    </tr>
+                </thead>
+                <tbody id="log-body">
+                    {% for log in logs %}
+                    <tr>
+                        <td>{{ log.time }}</td>
+                        <td>{{ log.uid }}</td>
+                        <td>Rp{{ "{:,}".format(log.amount) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div id="log-summary" style="margin-top:15px; font-weight:600; color:#2c3e50;">
+                Jumlah Transaksi: 0 | Total Nominal: Rp0
+            </div>
+        </div>
+    </div>
+
+<script>
+let lastLogUid = null;
+let allLogs = [];
+let currentFilter = { uid:"", date:"", mode:"day" };
+
+// ===== Sidebar Section Toggle =====
+function showSection(id, el){
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+}
+
+// ===== Change input field based on mode =====
+function changeFilterMode(){
+    const mode = document.getElementById("filter-mode").value;
+    document.getElementById("filter-date").style.display = (mode==="day")?"inline-block":"none";
+    document.getElementById("filter-month").style.display = (mode==="month")?"inline-block":"none";
+}
+
+// ===== Fetch status =====
+function fetchStatus(){
+    fetch("/status").then(r=>r.json()).then(data=>{
+        const box = document.getElementById("status-box");
+        box.className = "status-box";
+        if(data.status==="success") box.classList.add("status-success");
+        else if(data.status==="failed") box.classList.add("status-failed");
+        else box.classList.add("status-idle");
+
+        document.getElementById("status-text").innerText = data.status==="success"?"BERHASIL":data.status==="failed"?"GAGAL":"IDLE";
+        document.getElementById("uid-text").innerText = data.uid||"-";
+        document.getElementById("amount-text").innerText = data.amount?parseInt(data.amount).toLocaleString("id-ID"):"-";
+    });
+}
+
+// ===== Fetch log =====
+function fetchLog(){
+    fetch("/log").then(r=>r.json()).then(logs=>{
+        allLogs = logs;
+        applyCurrentFilter();
+    });
+}
+
+// ===== Render table =====
+function renderTable(logs){
+    const tbody = document.getElementById("log-body");
+    const summary = document.getElementById("log-summary");
+    tbody.innerHTML="";
+    if(logs.length===0){
+        tbody.innerHTML=`<tr><td colspan="3" style="text-align:center;color:#888;">Belum ada transaksi</td></tr>`;
+        summary.innerText="Jumlah Transaksi: 0 | Total Nominal: Rp0";
+        return;
+    }
+    let totalNominal=0;
+    logs.forEach((log,index)=>{
+        totalNominal+=parseInt(log.amount);
+        const row=document.createElement("tr");
+        row.innerHTML=`
+            <td>${log.time}</td>
+            <td>${log.uid}</td>
+            <td>Rp${parseInt(log.amount).toLocaleString("id-ID")}</td>
+        `;
+        if(index===0 && log.uid!==lastLogUid){
+            row.classList.add("highlight");
+            lastLogUid=log.uid;
+        }
+        tbody.appendChild(row);
+    });
+    summary.innerText=`Jumlah Transaksi: ${logs.length} | Total Nominal: Rp${totalNominal.toLocaleString("id-ID")}`;
+}
+
+// ===== Apply filter =====
+function applyFilter(){
+    const uid=document.getElementById("filter-uid").value;
+    const mode=document.getElementById("filter-mode").value;
+    const date=(mode==="day")?document.getElementById("filter-date").value:document.getElementById("filter-month").value;
+    currentFilter={uid, date, mode};
+    applyCurrentFilter();
+}
+
+// ===== Filter logic =====
+function applyCurrentFilter(){
+    let filtered=allLogs;
+    if(currentFilter.uid) filtered=filtered.filter(l=>l.uid===currentFilter.uid);
+    if(currentFilter.date){
+        if(currentFilter.mode==="day") filtered=filtered.filter(l=>l.time.startsWith(currentFilter.date));
+        else if(currentFilter.mode==="month") filtered=filtered.filter(l=>l.time.startsWith(currentFilter.date));
+    }
+    renderTable(filtered);
+    updateDownloadLinks();
+}
+
+// ===== Update download links =====
+function updateDownloadLinks(){
+    let uidParam=currentFilter.uid?`&uid=${currentFilter.uid}`:"";
+    let dateParam=currentFilter.date?`&date=${currentFilter.date}`:"";
+    let modeParam=currentFilter.mode||"day";
+    document.querySelector("a[href^='/download/pdf']").href=`/download/pdf?mode=${modeParam}${dateParam}${uidParam}`;
+    document.querySelector("a[href^='/download/excel']").href=`/download/excel?mode=${modeParam}${dateParam}${uidParam}`;
+}
+
+// ===== Reset filter =====
+function resetFilter(){
+    document.getElementById("filter-uid").value="";
+    document.getElementById("filter-date").value="";
+    document.getElementById("filter-month").value="";
+    document.getElementById("filter-mode").value="day";
+    currentFilter={uid:"", date:"", mode:"day"};
+    renderTable(allLogs);
+    updateDownloadLinks();
+}
+
+// ===== Auto refresh =====
+setInterval(()=>{
+    fetchStatus();
+    fetchLog();
+},2000);
+</script>
+</body>
+</html>
