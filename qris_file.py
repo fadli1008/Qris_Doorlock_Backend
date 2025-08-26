@@ -27,7 +27,7 @@ def load_log_from_file():
         return
     with open("transaksi.log", "r") as f:
         lines = f.readlines()
-        for line in reversed(lines[-20:]):
+        for line in reversed(lines):
             try:
                 parts = line.strip().split("|")
                 if len(parts) == 3:
